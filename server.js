@@ -13,40 +13,40 @@ app.use(express.json())
 dns.setServers(['1.1.1.1', '8.8.8.8'])
 
 mongoose.connect(process.env.MONGO_URI)
-.then(()=>console.log("MongoDB conectado"))
-.catch(err=>console.error("Error Mongo:",err))
+  .then(() => console.log("MongoDB conectado"))
+  .catch(err => console.error("Error Mongo:", err))
 
 
 // =============================
 // MODELOS
 // =============================
 
-const Usuario = mongoose.model("Usuario",{
+const Usuario = mongoose.model("Usuario", {
 
-nombre:String,
-usuario:{type:String,unique:true},
-password:String,
-rol:{type:String,enum:["admin","cobrador"]},
-activo:{type:Boolean,default:true}
-
-})
-
-const Cliente = mongoose.model("Cliente",{
-
-primerNombre:String,
-segundoNombre:String,
-cedula:String,
-telefono:String,
-cobrador:{type:mongoose.Schema.Types.ObjectId,ref:"Usuario"}
+  nombre: String,
+  usuario: { type: String, unique: true },
+  password: String,
+  rol: { type: String, enum: ["admin", "cobrador"] },
+  activo: { type: Boolean, default: true }
 
 })
 
-const Credito = mongoose.model("Credito",{
+const Cliente = mongoose.model("Cliente", {
 
-cliente:{type:mongoose.Schema.Types.ObjectId,ref:"Cliente"},
-monto:Number,
-saldo:Number,
-fecha:Date
+  primerNombre: String,
+  segundoNombre: String,
+  cedula: String,
+  telefono: String,
+  cobrador: { type: mongoose.Schema.Types.ObjectId, ref: "Usuario" }
+
+})
+
+const Credito = mongoose.model("Credito", {
+
+  cliente: { type: mongoose.Schema.Types.ObjectId, ref: "Cliente" },
+  monto: Number,
+  saldo: Number,
+  fecha: Date
 
 })
 
@@ -55,51 +55,51 @@ fecha:Date
 // ADMINISTRADOR
 // =============================
 
-app.post("/crear-admin",async(req,res)=>{
+app.post("/crear-admin", async (req, res) => {
 
-try{
+  try {
 
-const{nombre,usuario,password}=req.body
+    const { nombre, usuario, password } = req.body
 
-const existe=await Usuario.findOne({usuario})
+    const existe = await Usuario.findOne({ usuario })
 
-if(existe){
-return res.status(400).json({mensaje:"El usuario ya existe"})
-}
+    if (existe) {
+      return res.status(400).json({ mensaje: "El usuario ya existe" })
+    }
 
-const nuevo=new Usuario({
-nombre,
-usuario,
-password,
-rol:"admin"
+    const nuevo = new Usuario({
+      nombre,
+      usuario,
+      password,
+      rol: "admin"
+    })
+
+    await nuevo.save()
+
+    res.json({ mensaje: "Administrador creado correctamente" })
+
+  } catch (error) {
+    res.status(500).json({ error: "Error al crear administrador" })
+  }
+
 })
 
-await nuevo.save()
 
-res.json({mensaje:"Administrador creado correctamente"})
+app.post("/login-admin", async (req, res) => {
 
-}catch(error){
-res.status(500).json({error:"Error al crear administrador"})
-}
+  const { usuario, password } = req.body
 
-})
+  const admin = await Usuario.findOne({
+    usuario,
+    password,
+    rol: "admin"
+  })
 
+  if (!admin) {
+    return res.status(401).json({ mensaje: "Credenciales inválidas" })
+  }
 
-app.post("/login-admin",async(req,res)=>{
-
-const{usuario,password}=req.body
-
-const admin=await Usuario.findOne({
-usuario,
-password,
-rol:"admin"
-})
-
-if(!admin){
-return res.status(401).json({mensaje:"Credenciales inválidas"})
-}
-
-res.json({id:admin._id,nombre:admin.nombre})
+  res.json({ id: admin._id, nombre: admin.nombre })
 
 })
 
@@ -108,25 +108,25 @@ res.json({id:admin._id,nombre:admin.nombre})
 // LOGIN COBRADOR
 // =============================
 
-app.post("/login",async(req,res)=>{
+app.post("/login", async (req, res) => {
 
-const{usuario,password}=req.body
+  const { usuario, password } = req.body
 
-const cobrador=await Usuario.findOne({
-usuario,
-password,
-rol:"cobrador"
-})
+  const cobrador = await Usuario.findOne({
+    usuario,
+    password,
+    rol: "cobrador"
+  })
 
-if(!cobrador){
-return res.status(401).json({mensaje:"Credenciales inválidas"})
-}
+  if (!cobrador) {
+    return res.status(401).json({ mensaje: "Credenciales inválidas" })
+  }
 
-if(!cobrador.activo){
-return res.status(403).json({mensaje:"Cuenta deshabilitada"})
-}
+  if (!cobrador.activo) {
+    return res.status(403).json({ mensaje: "Cuenta deshabilitada" })
+  }
 
-res.json({id:cobrador._id,nombre:cobrador.nombre})
+  res.json({ id: cobrador._id, nombre: cobrador.nombre })
 
 })
 
@@ -135,83 +135,83 @@ res.json({id:cobrador._id,nombre:cobrador.nombre})
 // COBRADORES
 // =============================
 
-app.post("/cobrador",async(req,res)=>{
+app.post("/cobrador", async (req, res) => {
 
-try{
+  try {
 
-const{nombre,usuario,password}=req.body
+    const { nombre, usuario, password } = req.body
 
-const existe=await Usuario.findOne({usuario})
+    const existe = await Usuario.findOne({ usuario })
 
-if(existe){
-return res.status(400).json({mensaje:"El usuario ya existe"})
-}
+    if (existe) {
+      return res.status(400).json({ mensaje: "El usuario ya existe" })
+    }
 
-const nuevo=new Usuario({
-nombre,
-usuario,
-password,
-rol:"cobrador"
-})
+    const nuevo = new Usuario({
+      nombre,
+      usuario,
+      password,
+      rol: "cobrador"
+    })
 
-await nuevo.save()
+    await nuevo.save()
 
-res.json({mensaje:"Cobrador creado correctamente"})
+    res.json({ mensaje: "Cobrador creado correctamente" })
 
-}catch(error){
-res.status(500).json({error:"Error al crear cobrador"})
-}
-
-})
-
-
-app.get("/cobrador/:usuario",async(req,res)=>{
-
-try{
-
-const cobrador=await Usuario.findOne({
-usuario:req.params.usuario,
-rol:"cobrador"
-})
-
-if(!cobrador){
-return res.status(404).json({mensaje:"Cobrador no encontrado"})
-}
-
-res.json({
-usuario:cobrador.usuario,
-nombre:cobrador.nombre,
-activo:cobrador.activo
-})
-
-}catch(error){
-res.status(500).json({error:"Error al buscar cobrador"})
-}
+  } catch (error) {
+    res.status(500).json({ error: "Error al crear cobrador" })
+  }
 
 })
 
 
-app.put("/cobrador/deshabilitar/:usuario",async(req,res)=>{
+app.get("/cobrador/:usuario", async (req, res) => {
 
-try{
+  try {
 
-const cobrador=await Usuario.findOne({
-usuario:req.params.usuario,
-rol:"cobrador"
+    const cobrador = await Usuario.findOne({
+      usuario: req.params.usuario,
+      rol: "cobrador"
+    })
+
+    if (!cobrador) {
+      return res.status(404).json({ mensaje: "Cobrador no encontrado" })
+    }
+
+    res.json({
+      usuario: cobrador.usuario,
+      nombre: cobrador.nombre,
+      activo: cobrador.activo
+    })
+
+  } catch (error) {
+    res.status(500).json({ error: "Error al buscar cobrador" })
+  }
+
 })
 
-if(!cobrador){
-return res.status(404).json({mensaje:"Cobrador no encontrado"})
-}
 
-cobrador.activo=false
-await cobrador.save()
+app.put("/cobrador/deshabilitar/:usuario", async (req, res) => {
 
-res.json({mensaje:"Cobrador deshabilitado correctamente"})
+  try {
 
-}catch(error){
-res.status(500).json({error:"Error al deshabilitar"})
-}
+    const cobrador = await Usuario.findOne({
+      usuario: req.params.usuario,
+      rol: "cobrador"
+    })
+
+    if (!cobrador) {
+      return res.status(404).json({ mensaje: "Cobrador no encontrado" })
+    }
+
+    cobrador.activo = false
+    await cobrador.save()
+
+    res.json({ mensaje: "Cobrador deshabilitado correctamente" })
+
+  } catch (error) {
+    res.status(500).json({ error: "Error al deshabilitar" })
+  }
 
 })
 
@@ -220,90 +220,97 @@ res.status(500).json({error:"Error al deshabilitar"})
 // CLIENTES
 // =============================
 
-app.post("/cliente",async(req,res)=>{
+app.post("/cliente", async (req, res) => {
 
-try{
+  try {
 
-const{primerNombre,segundoNombre,cedula,telefono,monto,cobradorId}=req.body
+    const { primerNombre, segundoNombre, cedula, telefono, monto, cobradorId } = req.body
 
-const cliente=new Cliente({
-primerNombre,
-segundoNombre,
-cedula,
-telefono,
-cobrador:cobradorId
-})
+    // 🔒 VALIDAR CEDULA DUPLICADA
+    const existeCliente = await Cliente.findOne({ cedula })
 
-await cliente.save()
+    if (existeCliente) {
+      return res.status(400).json({ mensaje: "Ya existe un cliente con esa cédula" })
+    }
 
-const credito=new Credito({
-cliente:cliente._id,
-monto,
-saldo:monto,
-fecha:new Date()
-})
+    const cliente = new Cliente({
+      primerNombre,
+      segundoNombre,
+      cedula,
+      telefono,
+      cobrador: cobradorId
+    })
 
-await credito.save()
+    await cliente.save()
 
-res.json({cliente,credito})
+    const credito = new Credito({
+      cliente: cliente._id,
+      monto,
+      saldo: monto,
+      fecha: new Date()
+    })
 
-}catch(error){
-res.status(500).json({error:"Error al crear cliente"})
-}
+    await credito.save()
 
-})
+    res.json({ cliente, credito })
 
-
-
-app.get("/clientes/:cobradorId",async(req,res)=>{
-
-const clientes=await Cliente.find({cobrador:req.params.cobradorId})
-
-const resultado=[]
-
-for(let cliente of clientes){
-
-const credito=await Credito.findOne({cliente:cliente._id})
-
-resultado.push({
-primerNombre:cliente.primerNombre,
-segundoNombre:cliente.segundoNombre,
-cedula:cliente.cedula,
-telefono:cliente.telefono,
-deuda:credito?credito.saldo:0
-})
-
-}
-
-res.json(resultado)
+  } catch (error) {
+    res.status(500).json({ error: "Error al crear cliente" })
+  }
 
 })
 
 
 
-app.get("/cliente/:cedula",async(req,res)=>{
+app.get("/clientes/:cobradorId", async (req, res) => {
 
-try{
+  const clientes = await Cliente.find({ cobrador: req.params.cobradorId })
 
-const cliente=await Cliente.findOne({cedula:req.params.cedula})
+  const resultado = []
 
-if(!cliente){
-return res.status(404).json({mensaje:"Cliente no encontrado"})
-}
+  for (let cliente of clientes) {
 
-const credito=await Credito.findOne({cliente:cliente._id})
+    const credito = await Credito.findOne({ cliente: cliente._id })
 
-res.json({
-primerNombre:cliente.primerNombre,
-segundoNombre:cliente.segundoNombre,
-cedula:cliente.cedula,
-telefono:cliente.telefono,
-deuda:credito?credito.saldo:0
+    resultado.push({
+      primerNombre: cliente.primerNombre,
+      segundoNombre: cliente.segundoNombre,
+      cedula: cliente.cedula,
+      telefono: cliente.telefono,
+      deuda: credito ? credito.saldo : 0
+    })
+
+  }
+
+  res.json(resultado)
+
 })
 
-}catch(error){
-res.status(500).json({error:"Error al buscar cliente"})
-}
+
+
+app.get("/cliente/:cedula", async (req, res) => {
+
+  try {
+
+    const cliente = await Cliente.findOne({ cedula: req.params.cedula })
+
+    if (!cliente) {
+      return res.status(404).json({ mensaje: "Cliente no encontrado" })
+    }
+
+    const credito = await Credito.findOne({ cliente: cliente._id })
+
+    res.json({
+      primerNombre: cliente.primerNombre,
+      segundoNombre: cliente.segundoNombre,
+      cedula: cliente.cedula,
+      telefono: cliente.telefono,
+      deuda: credito ? credito.saldo : 0
+    })
+
+  } catch (error) {
+    res.status(500).json({ error: "Error al buscar cliente" })
+  }
 
 })
 
@@ -312,53 +319,53 @@ res.status(500).json({error:"Error al buscar cliente"})
 // PAGOS
 // =============================
 
-app.put("/pago/:cedula",async(req,res)=>{
+app.put("/pago/:cedula", async (req, res) => {
 
-try{
+  try {
 
-const{abono}=req.body
+    const { abono } = req.body
 
-const cliente=await Cliente.findOne({cedula:req.params.cedula})
-if(!cliente)return res.status(404).json({mensaje:"Cliente no encontrado"})
+    const cliente = await Cliente.findOne({ cedula: req.params.cedula })
+    if (!cliente) return res.status(404).json({ mensaje: "Cliente no encontrado" })
 
-const credito=await Credito.findOne({cliente:cliente._id})
-if(!credito)return res.status(404).json({mensaje:"Crédito no encontrado"})
+    const credito = await Credito.findOne({ cliente: cliente._id })
+    if (!credito) return res.status(404).json({ mensaje: "Crédito no encontrado" })
 
-credito.saldo-=abono
+    credito.saldo -= abono
 
-if(credito.saldo<0){
-credito.saldo=0
-}
+    if (credito.saldo < 0) {
+      credito.saldo = 0
+    }
 
-await credito.save()
+    await credito.save()
 
-res.json({nuevoSaldo:credito.saldo})
+    res.json({ nuevoSaldo: credito.saldo })
 
-}catch(error){
-res.status(500).json({error:"Error al registrar pago"})
-}
+  } catch (error) {
+    res.status(500).json({ error: "Error al registrar pago" })
+  }
 
 })
 
 
-app.put("/eliminar-deuda/:cedula",async(req,res)=>{
+app.put("/eliminar-deuda/:cedula", async (req, res) => {
 
-try{
+  try {
 
-const cliente=await Cliente.findOne({cedula:req.params.cedula})
-if(!cliente)return res.status(404).json({mensaje:"Cliente no encontrado"})
+    const cliente = await Cliente.findOne({ cedula: req.params.cedula })
+    if (!cliente) return res.status(404).json({ mensaje: "Cliente no encontrado" })
 
-const credito=await Credito.findOne({cliente:cliente._id})
-if(!credito)return res.status(404).json({mensaje:"Crédito no encontrado"})
+    const credito = await Credito.findOne({ cliente: cliente._id })
+    if (!credito) return res.status(404).json({ mensaje: "Crédito no encontrado" })
 
-credito.saldo=0
-await credito.save()
+    credito.saldo = 0
+    await credito.save()
 
-res.json({mensaje:"Deuda eliminada"})
+    res.json({ mensaje: "Deuda eliminada" })
 
-}catch(error){
-res.status(500).json({error:"Error al eliminar deuda"})
-}
+  } catch (error) {
+    res.status(500).json({ error: "Error al eliminar deuda" })
+  }
 
 })
 
@@ -367,48 +374,48 @@ res.status(500).json({error:"Error al eliminar deuda"})
 // LOGISTICA
 // =============================
 
-app.get("/logistica",async(req,res)=>{
+app.get("/logistica", async (req, res) => {
 
-try{
+  try {
 
-const cobradores=await Usuario.find({rol:"cobrador"})
+    const cobradores = await Usuario.find({ rol: "cobrador" })
 
-const resultado=[]
+    const resultado = []
 
-for(let cobrador of cobradores){
+    for (let cobrador of cobradores) {
 
-const clientes=await Cliente.find({cobrador:cobrador._id})
+      const clientes = await Cliente.find({ cobrador: cobrador._id })
 
-const clientesConDeuda=[]
+      const clientesConDeuda = []
 
-for(let cliente of clientes){
+      for (let cliente of clientes) {
 
-const credito=await Credito.findOne({cliente:cliente._id})
+        const credito = await Credito.findOne({ cliente: cliente._id })
 
-clientesConDeuda.push({
-nombre:cliente.primerNombre+" "+cliente.segundoNombre,
-cedula:cliente.cedula,
-telefono:cliente.telefono,
-deuda:credito?credito.saldo:0,
-estado:credito&&credito.saldo>0?"Con deuda":"Al día"
-})
+        clientesConDeuda.push({
+          nombre: cliente.primerNombre + " " + cliente.segundoNombre,
+          cedula: cliente.cedula,
+          telefono: cliente.telefono,
+          deuda: credito ? credito.saldo : 0,
+          estado: credito && credito.saldo > 0 ? "Con deuda" : "Al día"
+        })
 
-}
+      }
 
-resultado.push({
-usuario:cobrador.usuario,
-nombre:cobrador.nombre,
-activo:cobrador.activo,
-clientes:clientesConDeuda
-})
+      resultado.push({
+        usuario: cobrador.usuario,
+        nombre: cobrador.nombre,
+        activo: cobrador.activo,
+        clientes: clientesConDeuda
+      })
 
-}
+    }
 
-res.json(resultado)
+    res.json(resultado)
 
-}catch(error){
-res.status(500).json({error:"Error en logística"})
-}
+  } catch (error) {
+    res.status(500).json({ error: "Error en logística" })
+  }
 
 })
 
@@ -417,10 +424,10 @@ res.status(500).json({error:"Error en logística"})
 // COBRADORES SELECT
 // =============================
 
-app.get("/cobradores",async(req,res)=>{
+app.get("/cobradores", async (req, res) => {
 
-const cobradores=await Usuario.find({rol:"cobrador"})
-res.json(cobradores)
+  const cobradores = await Usuario.find({ rol: "cobrador" })
+  res.json(cobradores)
 
 })
 
@@ -429,55 +436,62 @@ res.json(cobradores)
 // CREAR CLIENTE ADMIN
 // =============================
 
-app.post("/crear-cliente-admin",async(req,res)=>{
+app.post("/crear-cliente-admin", async (req, res) => {
 
-const{primerNombre,segundoNombre,cedula,telefono,deuda,cobradorId}=req.body
+  const { primerNombre, segundoNombre, cedula, telefono, deuda, cobradorId } = req.body;
 
-try{
+  try {
 
-const nuevoCliente=new Cliente({
-primerNombre,
-segundoNombre,
-cedula,
-telefono,
-cobrador:cobradorId
-})
+    // 🔒 VALIDAR CEDULA DUPLICADA
+    const existeCliente = await Cliente.findOne({ cedula })
 
-await nuevoCliente.save()
+    if (existeCliente) {
+      return res.status(400).json({ mensaje: "Ya existe un cliente con esa cédula" })
+    }
 
-const nuevoCredito=new Credito({
-cliente:nuevoCliente._id,
-saldo:deuda
-})
+    const nuevoCliente = new Cliente({
+      primerNombre,
+      segundoNombre,
+      cedula,
+      telefono,
+      cobrador: cobradorId
+    });
 
-await nuevoCredito.save()
+    await nuevoCliente.save();
 
-res.json({mensaje:"Cliente creado correctamente"})
+    const nuevoCredito = new Credito({
+      cliente: nuevoCliente._id,
+      saldo: deuda
+    });
 
-}catch(error){
-res.status(500).json({error:"Error creando cliente"})
-}
+    await nuevoCredito.save();
 
-})
+    res.json({ mensaje: "Cliente creado correctamente" });
+
+  } catch (error) {
+    res.status(500).json({ error: "Error creando cliente" });
+  }
+
+});
 
 
 // =============================
 // HEALTH CHECK
 // =============================
 
-app.get("/",(req,res)=>{
+app.get("/", (req, res) => {
 
-res.json({
-estado:"Servidor funcionando",
-entorno:process.env.VERCEL?"Producción":"Local"
+  res.json({
+    estado: "Servidor funcionando",
+    entorno: process.env.VERCEL ? "Producción" : "Local"
+  })
+
 })
 
-})
-
-if(!process.env.VERCEL){
-app.listen(PORT,()=>{
-console.log(`Servidor corriendo en http://localhost:${PORT}`)
-})
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Servidor corriendo en http://localhost:${PORT}`)
+  })
 }
 
-module.exports=app
+module.exports = app
