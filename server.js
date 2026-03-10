@@ -143,13 +143,18 @@ app.post("/login-admin", async (req, res) => {
     usuario,
     password,
     rol: "admin"
-  })
+  }).populate("oficina")
 
   if (!admin) {
     return res.status(401).json({ mensaje: "Credenciales inválidas" })
   }
 
-  res.json({ id: admin._id, nombre: admin.nombre })
+  res.json({
+    id: admin._id,
+    nombre: admin.nombre,
+    oficinaId: admin.oficina ? admin.oficina._id : null,
+    oficinaNombre: admin.oficina ? admin.oficina.nombre : "Sin oficina"
+  })
 
 })
 
