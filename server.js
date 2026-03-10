@@ -24,20 +24,44 @@ mongoose.connect(process.env.MONGO_URI)
 const Usuario = mongoose.model("Usuario", {
 
   nombre: String,
+
   usuario: { type: String, unique: true },
+
   password: String,
-  rol: { type: String, enum: ["admin", "cobrador"] },
-  activo: { type: Boolean, default: true }
+
+  rol: {
+    type: String,
+    enum: ["superadmin", "admin", "cobrador"]
+  },
+
+  activo: { type: Boolean, default: true },
+
+  oficina: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Oficina"
+  }
 
 })
 
 const Cliente = mongoose.model("Cliente", {
 
   primerNombre: String,
+
   segundoNombre: String,
+
   cedula: String,
+
   telefono: String,
-  cobrador: { type: mongoose.Schema.Types.ObjectId, ref: "Usuario" }
+
+  cobrador: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Usuario"
+  },
+
+  oficina: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Oficina"
+  }
 
 })
 
@@ -50,6 +74,30 @@ const Credito = mongoose.model("Credito", {
 
 })
 
+const Oficina = mongoose.model("Oficina", {
+
+  nombre: String,
+  direccion: String,
+  telefono: String,
+
+  superAdmin: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Usuario"
+  },
+
+  fechaCreacion: {
+    type: Date,
+    default: Date.now
+  }
+
+})
+
+
+// ENDPOINTS
+// vvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+
+
+
 
 // =============================
 // ADMINISTRADOR
@@ -59,7 +107,7 @@ app.post("/crear-admin", async (req, res) => {
 
   try {
 
-    const { nombre, usuario, password } = req.body
+    const { nombre, usuario, password, oficinaId } = req.body
 
     const existe = await Usuario.findOne({ usuario })
 
@@ -71,7 +119,8 @@ app.post("/crear-admin", async (req, res) => {
       nombre,
       usuario,
       password,
-      rol: "admin"
+      rol: "admin",
+      oficina: oficinaId
     })
 
     await nuevo.save()
@@ -83,6 +132,7 @@ app.post("/crear-admin", async (req, res) => {
   }
 
 })
+
 
 
 app.post("/login-admin", async (req, res) => {
@@ -103,6 +153,149 @@ app.post("/login-admin", async (req, res) => {
 
 })
 
+// =============================
+// CREAR SUPER ADMIN
+// =============================
+
+app.post("/crear-superadmin", async (req, res) => {
+
+  try {
+
+    const { nombre, usuario, password } = req.body
+
+    const existe = await Usuario.findOne({ usuario })
+
+    if (existe) {
+      return res.status(400).json({ mensaje: "Usuario ya existe" })
+    }
+
+    const nuevo = new Usuario({
+      nombre,
+      usuario,
+      password,
+      rol: "superadmin"
+    })
+
+    await nuevo.save()
+
+    res.json({ mensaje: "Super admin creado" })
+
+  } catch (error) {
+
+    res.status(500).json({ error: "Error creando super admin" })
+
+  }
+
+})
+
+// =============================
+// INICIAR SESION SUPER ADMIN
+// =============================
+
+app.post("/login-superadmin", async (req, res) => {
+
+  const { usuario, password } = req.body
+
+  const admin = await Usuario.findOne({
+    usuario,
+    password,
+    rol: "superadmin"
+  })
+
+  if (!admin) {
+    return res.status(401).json({ mensaje: "Credenciales inválidas" })
+  }
+
+  res.json({
+    id: admin._id,
+    nombre: admin.nombre
+  })
+
+})
+
+// =============================
+// CREAR OFICINA
+// =============================
+
+app.post("/oficina", async (req, res) => {
+
+  try {
+
+    const { nombre, direccion, telefono, superAdminId } = req.body
+
+    const nueva = new Oficina({
+      nombre,
+      direccion,
+      telefono,
+      superAdmin: superAdminId
+    })
+
+    await nueva.save()
+
+    res.json({ mensaje: "Oficina creada", oficina: nueva })
+
+  } catch (error) {
+
+    res.status(500).json({ error: "Error creando oficina" })
+
+  }
+
+})
+
+
+// =============================
+// CREAR SUPER OFICINA
+// =============================
+
+app.get("/oficinas/:superAdminId", async (req, res) => {
+
+  try {
+
+    const oficinas = await Oficina.find({
+      superAdmin: req.params.superAdminId
+    })
+
+    res.json(oficinas)
+
+  } catch (error) {
+
+    res.status(500).json({ error: "Error obteniendo oficinas" })
+
+  }
+
+})
+
+// =============================
+// BORRAR OFICINA
+// =============================
+
+app.delete("/oficina/:id", async (req, res) => {
+
+  try {
+
+    const oficinaId = req.params.id
+
+    const clientes = await Cliente.find({ oficina: oficinaId })
+
+    const clientesIds = clientes.map(c => c._id)
+
+    await Credito.deleteMany({ cliente: { $in: clientesIds } })
+
+    await Cliente.deleteMany({ oficina: oficinaId })
+
+    await Usuario.deleteMany({ oficina: oficinaId })
+
+    await Oficina.findByIdAndDelete(oficinaId)
+
+    res.json({ mensaje: "Oficina eliminada correctamente" })
+
+  } catch (error) {
+
+    res.status(500).json({ error: "Error eliminando oficina" })
+
+  }
+
+})
 
 // =============================
 // LOGIN COBRADOR
@@ -139,7 +332,7 @@ app.post("/cobrador", async (req, res) => {
 
   try {
 
-    const { nombre, usuario, password } = req.body
+    const { nombre, usuario, password, oficinaId } = req.body
 
     const existe = await Usuario.findOne({ usuario })
 
@@ -151,7 +344,8 @@ app.post("/cobrador", async (req, res) => {
       nombre,
       usuario,
       password,
-      rol: "cobrador"
+      rol: "cobrador",
+      oficina: oficinaId
     })
 
     await nuevo.save()
@@ -215,6 +409,27 @@ app.put("/cobrador/deshabilitar/:usuario", async (req, res) => {
 
 })
 
+// FILTRAR COBRADORES POR OFICINA 
+
+app.get("/cobradores/:oficinaId", async (req, res) => {
+
+  try {
+
+    const cobradores = await Usuario.find({
+      rol: "cobrador",
+      oficina: req.params.oficinaId
+    })
+
+    res.json(cobradores)
+
+  } catch (error) {
+
+    res.status(500).json({ error: "Error obteniendo cobradores" })
+
+  }
+
+})
+
 
 // =============================
 // CLIENTES
@@ -233,12 +448,20 @@ app.post("/cliente", async (req, res) => {
       return res.status(400).json({ mensaje: "Ya existe un cliente con esa cédula" })
     }
 
+    // 🔎 BUSCAR COBRADOR PARA SABER SU OFICINA
+    const cobrador = await Usuario.findById(cobradorId)
+
+    if (!cobrador) {
+      return res.status(404).json({ mensaje: "Cobrador no encontrado" })
+    }
+
     const cliente = new Cliente({
       primerNombre,
       segundoNombre,
       cedula,
       telefono,
-      cobrador: cobradorId
+      cobrador: cobradorId,
+      oficina: cobrador.oficina   // 🔑 ESTA ES LA PARTE NUEVA
     })
 
     await cliente.save()
@@ -255,7 +478,9 @@ app.post("/cliente", async (req, res) => {
     res.json({ cliente, credito })
 
   } catch (error) {
+
     res.status(500).json({ error: "Error al crear cliente" })
+
   }
 
 })
@@ -374,11 +599,14 @@ app.put("/eliminar-deuda/:cedula", async (req, res) => {
 // LOGISTICA
 // =============================
 
-app.get("/logistica", async (req, res) => {
+app.get("/logistica/:oficinaId", async (req, res) => {
 
   try {
 
-    const cobradores = await Usuario.find({ rol: "cobrador" })
+    const cobradores = await Usuario.find({
+      rol: "cobrador",
+      oficina: req.params.oficinaId
+    })
 
     const resultado = []
 
@@ -414,7 +642,9 @@ app.get("/logistica", async (req, res) => {
     res.json(resultado)
 
   } catch (error) {
+
     res.status(500).json({ error: "Error en logística" })
+
   }
 
 })
@@ -449,12 +679,20 @@ app.post("/crear-cliente-admin", async (req, res) => {
       return res.status(400).json({ mensaje: "Ya existe un cliente con esa cédula" })
     }
 
+    // 🔎 BUSCAR COBRADOR PARA OBTENER SU OFICINA
+    const cobrador = await Usuario.findById(cobradorId)
+
+    if (!cobrador) {
+      return res.status(404).json({ mensaje: "Cobrador no encontrado" })
+    }
+
     const nuevoCliente = new Cliente({
       primerNombre,
       segundoNombre,
       cedula,
       telefono,
-      cobrador: cobradorId
+      cobrador: cobradorId,
+      oficina: cobrador.oficina   // 🔑 NUEVO CAMPO
     });
 
     await nuevoCliente.save();
@@ -469,7 +707,9 @@ app.post("/crear-cliente-admin", async (req, res) => {
     res.json({ mensaje: "Cliente creado correctamente" });
 
   } catch (error) {
+
     res.status(500).json({ error: "Error creando cliente" });
+
   }
 
 });
