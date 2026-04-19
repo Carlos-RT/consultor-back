@@ -1,33 +1,37 @@
 const TelegramBot = require("node-telegram-bot-api");
-const axios = require("axios");
+const mongoose = require("mongoose");
 
 const TOKEN = process.env.TELEGRAM_TOKEN;
-const API_URL = process.env.BASE_URL;
 
 const bot = new TelegramBot(TOKEN, { polling: false });
+
+// 🔗 usar modelos ya definidos en server.js
+const Usuario = mongoose.model("Usuario");
+const Cliente = mongoose.model("Cliente");
+const Credito = mongoose.model("Credito");
 
 // 🧠 sesiones en memoria
 const sesiones = {};
 
+// =============================
+// INICIALIZAR BOT
+// =============================
 function initBot(app) {
 
-    // ✅ WEBHOOK
     app.post("/telegram-webhook", (req, res) => {
 
-        // 🔥 RESPONDER INMEDIATO (EVITA TIMEOUT)
+        // 🔥 RESPUESTA INMEDIATA (EVITA TIMEOUT)
         res.sendStatus(200);
 
-        // 🔥 PROCESAR DESPUÉS
         procesarMensaje(req.body);
 
     });
 
 }
 
-
-// ===============================
-// 🧠 LÓGICA DEL BOT
-// ===============================
+// =============================
+// LÓGICA PRINCIPAL
+// =============================
 async function procesarMensaje(update) {
 
     try {
@@ -37,17 +41,15 @@ async function procesarMensaje(update) {
         const chatId = update.message.chat.id;
         const text = update.message.text;
 
-        console.log("📩 Mensaje:", text);
+        console.log("📩", text);
 
         // ======================
-        // /start
+        // START
         // ======================
         if (text === "/start") {
-
             return bot.sendMessage(chatId,
-                "🤖 Bienvenido\n\n" +
-                "Usa:\n" +
-                "/login usuario password"
+                "🤖 Bienvenido al bot de cobradores\n\n" +
+                "Usa:\n/login usuario password"
             );
         }
 
@@ -67,34 +69,37 @@ async function procesarMensaje(update) {
 
             try {
 
-                console.log("Intentando login:", usuario);
-
-                const resLogin = await axios.post(`${API_URL}/login`, {
+                const cobrador = await Usuario.findOne({
                     usuario,
-                    password
+                    password,
+                    rol: "cobrador"
                 });
 
-                const data = resLogin.data;
+                if (!cobrador) {
+                    return bot.sendMessage(chatId, "❌ Credenciales inválidas");
+                }
 
-                // guardar sesión
+                if (!cobrador.activo) {
+                    return bot.sendMessage(chatId, "⛔ Cuenta deshabilitada");
+                }
+
                 sesiones[chatId] = {
-                    id: data.id,
-                    nombre: data.nombre
+                    id: cobrador._id,
+                    nombre: cobrador.nombre
                 };
 
                 return bot.sendMessage(chatId,
-                    `✅ Bienvenido ${data.nombre}\n\n` +
-                    "Comandos:\n" +
-                    "/clientes\n" +
-                    "/crear nombre1 nombre2 cedula telefono monto\n" +
-                    "/pago cedula monto"
+                    `✅ Bienvenido ${cobrador.nombre}\n\n` +
+                    "📌 Comandos disponibles:\n\n" +
+                    "/clientes → ver todos\n" +
+                    "/buscar cedula → ver cliente\n" +
+                    "/crear n1 n2 cedula tel monto\n" +
+                    "/eliminar cedula → marcar como pagado"
                 );
 
-            } catch (err) {
-
-                console.error("ERROR LOGIN:", err.response?.data || err.message);
-
-                return bot.sendMessage(chatId, "❌ Credenciales inválidas");
+            } catch (error) {
+                console.error(error);
+                return bot.sendMessage(chatId, "Error en login");
             }
         }
 
@@ -109,11 +114,9 @@ async function procesarMensaje(update) {
 
             try {
 
-                const resClientes = await axios.get(
-                    `${API_URL}/clientes/${sesiones[chatId].id}`
-                );
-
-                const clientes = resClientes.data;
+                const clientes = await Cliente.find({
+                    cobrador: sesiones[chatId].id
+                });
 
                 if (clientes.length === 0) {
                     return bot.sendMessage(chatId, "No tienes clientes");
@@ -121,19 +124,74 @@ async function procesarMensaje(update) {
 
                 let mensaje = "📋 Tus clientes:\n\n";
 
-                clientes.forEach(c => {
-                    mensaje += `👤 ${c.primerNombre} ${c.segundoNombre}\n`;
-                    mensaje += `🆔 ${c.cedula}\n`;
-                    mensaje += `💰 ${c.deuda}\n\n`;
-                });
+                for (let cliente of clientes) {
+
+                    const credito = await Credito.findOne({
+                        cliente: cliente._id
+                    });
+
+                    const deuda = credito ? credito.saldo : 0;
+                    const estado = deuda > 0 ? "Pendiente" : "Pagado";
+
+                    mensaje += `👤 ${cliente.primerNombre} ${cliente.segundoNombre}\n`;
+                    mensaje += `🆔 ${cliente.cedula}\n`;
+                    mensaje += `💰 ${deuda} (${estado})\n\n`;
+                }
 
                 return bot.sendMessage(chatId, mensaje);
 
             } catch (error) {
-
-                console.error("ERROR CLIENTES:", error.message);
-
+                console.error(error);
                 return bot.sendMessage(chatId, "Error obteniendo clientes");
+            }
+        }
+
+        // ======================
+        // BUSCAR CLIENTE
+        // ======================
+        if (text.startsWith("/buscar")) {
+
+            if (!sesiones[chatId]) {
+                return bot.sendMessage(chatId, "Primero debes hacer /login");
+            }
+
+            const partes = text.split(" ");
+
+            if (partes.length < 2) {
+                return bot.sendMessage(chatId, "Uso: /buscar cedula");
+            }
+
+            const cedula = partes[1];
+
+            try {
+
+                const cliente = await Cliente.findOne({
+                    cedula,
+                    cobrador: sesiones[chatId].id
+                });
+
+                if (!cliente) {
+                    return bot.sendMessage(chatId, "Cliente no encontrado");
+                }
+
+                const credito = await Credito.findOne({
+                    cliente: cliente._id
+                });
+
+                const deuda = credito ? credito.saldo : 0;
+                const estado = deuda > 0 ? "Pendiente" : "Pagado";
+
+                return bot.sendMessage(chatId,
+                    `👤 ${cliente.primerNombre} ${cliente.segundoNombre}\n` +
+                    `🆔 ${cliente.cedula}\n` +
+                    `📞 ${cliente.telefono}\n` +
+                    `💰 Deuda: ${deuda}\n` +
+                    `📊 Estado: ${estado}`
+                );
+
+            } catch (error) {
+                console.error(error);
+                return bot.sendMessage(chatId, "Error buscando cliente");
             }
         }
 
@@ -158,29 +216,46 @@ async function procesarMensaje(update) {
 
             try {
 
-                const res = await axios.post(`${API_URL}/cliente`, {
+                const existe = await Cliente.findOne({ cedula });
+
+                if (existe) {
+                    return bot.sendMessage(chatId, "❌ Ya existe un cliente con esa cédula");
+                }
+
+                const cobrador = await Usuario.findById(sesiones[chatId].id);
+
+                const cliente = new Cliente({
                     primerNombre: p1,
                     segundoNombre: p2,
                     cedula,
                     telefono,
-                    monto: Number(monto),
-                    cobradorId: sesiones[chatId].id
+                    cobrador: cobrador._id,
+                    oficina: cobrador.oficina
                 });
 
-                return bot.sendMessage(chatId, "✅ Cliente creado");
+                await cliente.save();
+
+                const credito = new Credito({
+                    cliente: cliente._id,
+                    monto: Number(monto),
+                    saldo: Number(monto),
+                    fecha: new Date()
+                });
+
+                await credito.save();
+
+                return bot.sendMessage(chatId, "✅ Cliente creado correctamente");
 
             } catch (error) {
-
-                console.error("ERROR CREAR:", error.response?.data || error.message);
-
-                return bot.sendMessage(chatId, "❌ Error creando cliente");
+                console.error(error);
+                return bot.sendMessage(chatId, "Error creando cliente");
             }
         }
 
         // ======================
-        // PAGO
+        // ELIMINAR DEUDA (PAGO COMPLETO)
         // ======================
-        if (text.startsWith("/pago")) {
+        if (text.startsWith("/eliminar")) {
 
             if (!sesiones[chatId]) {
                 return bot.sendMessage(chatId, "Primero debes hacer /login");
@@ -188,36 +263,47 @@ async function procesarMensaje(update) {
 
             const partes = text.split(" ");
 
-            if (partes.length < 3) {
-                return bot.sendMessage(chatId, "Uso: /pago cedula monto");
+            if (partes.length < 2) {
+                return bot.sendMessage(chatId, "Uso: /eliminar cedula");
             }
 
             const cedula = partes[1];
-            const monto = Number(partes[2]);
 
             try {
 
-                const res = await axios.put(`${API_URL}/pago/${cedula}`, {
-                    abono: monto
+                const cliente = await Cliente.findOne({
+                    cedula,
+                    cobrador: sesiones[chatId].id
                 });
 
+                if (!cliente) {
+                    return bot.sendMessage(chatId, "Cliente no encontrado");
+                }
+
+                const credito = await Credito.findOne({
+                    cliente: cliente._id
+                });
+
+                if (!credito) {
+                    return bot.sendMessage(chatId, "Crédito no encontrado");
+                }
+
+                credito.saldo = 0;
+                await credito.save();
+
                 return bot.sendMessage(chatId,
-                    `💰 Pago aplicado\nNuevo saldo: ${res.data.nuevoSaldo}`
+                    "✅ Pago registrado correctamente\nEl cliente ahora está al día"
                 );
 
             } catch (error) {
-
-                console.error("ERROR PAGO:", error.response?.data || error.message);
-
-                return bot.sendMessage(chatId, "Error en el pago");
+                console.error(error);
+                return bot.sendMessage(chatId, "Error eliminando deuda");
             }
         }
 
     } catch (error) {
-
-        console.error("ERROR GENERAL BOT:", error);
+        console.error("ERROR BOT:", error);
     }
-
 }
 
 module.exports = { initBot };
