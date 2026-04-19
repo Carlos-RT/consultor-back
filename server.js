@@ -3,12 +3,14 @@ const express = require("express")
 const mongoose = require("mongoose")
 const cors = require("cors")
 const dns = require("dns")
+const { initBot } = require("./chatbot");
 
 const PORT = process.env.PORT || 3000;
 
 const app = express()
 app.use(cors())
 app.use(express.json())
+initBot(app);
 
 dns.setServers(['1.1.1.1', '8.8.8.8'])
 
