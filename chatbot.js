@@ -2,26 +2,31 @@ const TelegramBot = require("node-telegram-bot-api");
 const mongoose = require("mongoose");
 require("dotenv").config();
 
-// 🔥 IMPORTAR MODELOS
-const Usuario = require("./models/Usuario");
-const Cliente = require("./models/Cliente");
-const Credito = require("./models/Credito");
-const Oficina = require("./models/Oficina");
+// 🔥 IMPORTAR MODELOS (solo registrar)
+require("./models/Usuario");
+require("./models/Cliente");
+require("./models/Credito");
+require("./models/Oficina");
+
+// 🔥 OBTENER MODELOS
+const Usuario = mongoose.model("Usuario");
+const Cliente = mongoose.model("Cliente");
+const Credito = mongoose.model("Credito");
 
 const TOKEN = process.env.TELEGRAM_TOKEN;
 const bot = new TelegramBot(TOKEN, { polling: false });
+
+// ⚠️ CONFIGURAR WEBHOOK
 bot.setWebHook("https://consultor-back.vercel.app/telegram-webhook");
 
 // 🧠 sesiones en memoria
 const sesiones = {};
-let isConnected = false;
+
 // =============================
-// 🔥 CONEXIÓN SEGURA A MONGO (VERCEL)
+// 🔥 CONEXIÓN SEGURA A MONGO
 // =============================
 async function conectarDB() {
-    if (mongoose.connection.readyState === 1) {
-        return;
-    }
+    if (mongoose.connection.readyState === 1) return;
 
     try {
         await mongoose.connect(process.env.MONGO_URI);
@@ -39,7 +44,7 @@ function initBot(app) {
 
     app.post("/telegram-webhook", (req, res) => {
 
-        // 🔥 RESPUESTA INMEDIATA (EVITA TIMEOUT 504)
+        // 🔥 RESPUESTA INMEDIATA (evita timeout)
         res.sendStatus(200);
 
         // procesar async
@@ -54,17 +59,14 @@ function initBot(app) {
 // =============================
 async function procesarMensaje(update) {
 
-    await conectarDB();
-
     try {
 
-        // 🔥 CONECTAR A MONGO EN CADA REQUEST
         await conectarDB();
 
-        if (!update.message) return;
+        if (!update.message || !update.message.text) return;
 
         const chatId = update.message.chat.id;
-        const text = update.message.text;
+        const text = update.message.text.trim();
 
         console.log("📩", text);
 
@@ -72,10 +74,19 @@ async function procesarMensaje(update) {
         // START
         // ======================
         if (text === "/start") {
-            return bot.sendMessage(chatId,
-                "🤖 Bienvenido al bot de cobradores\n\n" +
-                "Usa:\n/login usuario password"
-            );
+
+            console.log("➡️ Enviando bienvenida");
+
+            try {
+                await bot.sendMessage(chatId,
+                    "🤖 Bienvenido al bot de cobradores\n\n" +
+                    "Usa:\n/login usuario password"
+                );
+            } catch (err) {
+                console.error("❌ Error enviando mensaje:", err);
+            }
+
+            return;
         }
 
         // ======================
@@ -86,7 +97,7 @@ async function procesarMensaje(update) {
             const partes = text.split(" ");
 
             if (partes.length < 3) {
-                return bot.sendMessage(chatId, "Uso: /login usuario password");
+                return await bot.sendMessage(chatId, "Uso: /login usuario password");
             }
 
             const usuario = partes[1];
@@ -101,11 +112,11 @@ async function procesarMensaje(update) {
                 });
 
                 if (!cobrador) {
-                    return bot.sendMessage(chatId, "❌ Credenciales inválidas");
+                    return await bot.sendMessage(chatId, "❌ Credenciales inválidas");
                 }
 
                 if (!cobrador.activo) {
-                    return bot.sendMessage(chatId, "⛔ Cuenta deshabilitada");
+                    return await bot.sendMessage(chatId, "⛔ Cuenta deshabilitada");
                 }
 
                 sesiones[chatId] = {
@@ -113,9 +124,9 @@ async function procesarMensaje(update) {
                     nombre: cobrador.nombre
                 };
 
-                return bot.sendMessage(chatId,
+                return await bot.sendMessage(chatId,
                     `✅ Bienvenido ${cobrador.nombre}\n\n` +
-                    "📌 Comandos disponibles:\n\n" +
+                    "📌 Comandos:\n" +
                     "/clientes\n" +
                     "/buscar cedula\n" +
                     "/crear n1 n2 cedula tel monto\n" +
@@ -124,7 +135,7 @@ async function procesarMensaje(update) {
 
             } catch (error) {
                 console.error(error);
-                return bot.sendMessage(chatId, "Error en login");
+                return await bot.sendMessage(chatId, "Error en login");
             }
         }
 
@@ -134,7 +145,7 @@ async function procesarMensaje(update) {
         if (text === "/clientes") {
 
             if (!sesiones[chatId]) {
-                return bot.sendMessage(chatId, "Primero debes hacer /login");
+                return await bot.sendMessage(chatId, "Primero debes hacer /login");
             }
 
             try {
@@ -144,7 +155,7 @@ async function procesarMensaje(update) {
                 });
 
                 if (clientes.length === 0) {
-                    return bot.sendMessage(chatId, "No tienes clientes");
+                    return await bot.sendMessage(chatId, "No tienes clientes");
                 }
 
                 let mensaje = "📋 Tus clientes:\n\n";
@@ -163,11 +174,11 @@ async function procesarMensaje(update) {
                     mensaje += `💰 ${deuda} (${estado})\n\n`;
                 }
 
-                return bot.sendMessage(chatId, mensaje);
+                return await bot.sendMessage(chatId, mensaje);
 
             } catch (error) {
                 console.error(error);
-                return bot.sendMessage(chatId, "Error obteniendo clientes");
+                return await bot.sendMessage(chatId, "Error obteniendo clientes");
             }
         }
 
@@ -177,13 +188,13 @@ async function procesarMensaje(update) {
         if (text.startsWith("/buscar")) {
 
             if (!sesiones[chatId]) {
-                return bot.sendMessage(chatId, "Primero debes hacer /login");
+                return await bot.sendMessage(chatId, "Primero debes hacer /login");
             }
 
             const partes = text.split(" ");
 
             if (partes.length < 2) {
-                return bot.sendMessage(chatId, "Uso: /buscar cedula");
+                return await bot.sendMessage(chatId, "Uso: /buscar cedula");
             }
 
             const cedula = partes[1];
@@ -196,7 +207,7 @@ async function procesarMensaje(update) {
                 });
 
                 if (!cliente) {
-                    return bot.sendMessage(chatId, "Cliente no encontrado");
+                    return await bot.sendMessage(chatId, "Cliente no encontrado");
                 }
 
                 const credito = await Credito.findOne({
@@ -206,7 +217,7 @@ async function procesarMensaje(update) {
                 const deuda = credito ? credito.saldo : 0;
                 const estado = deuda > 0 ? "Pendiente" : "Pagado";
 
-                return bot.sendMessage(chatId,
+                return await bot.sendMessage(chatId,
                     `👤 ${cliente.primerNombre} ${cliente.segundoNombre}\n` +
                     `🆔 ${cliente.cedula}\n` +
                     `📞 ${cliente.telefono}\n` +
@@ -216,7 +227,7 @@ async function procesarMensaje(update) {
 
             } catch (error) {
                 console.error(error);
-                return bot.sendMessage(chatId, "Error buscando cliente");
+                return await bot.sendMessage(chatId, "Error buscando cliente");
             }
         }
 
@@ -226,13 +237,13 @@ async function procesarMensaje(update) {
         if (text.startsWith("/crear")) {
 
             if (!sesiones[chatId]) {
-                return bot.sendMessage(chatId, "Primero debes hacer /login");
+                return await bot.sendMessage(chatId, "Primero debes hacer /login");
             }
 
             const partes = text.split(" ");
 
             if (partes.length < 6) {
-                return bot.sendMessage(chatId,
+                return await bot.sendMessage(chatId,
                     "Uso:\n/crear nombre1 nombre2 cedula telefono monto"
                 );
             }
@@ -244,7 +255,7 @@ async function procesarMensaje(update) {
                 const existe = await Cliente.findOne({ cedula });
 
                 if (existe) {
-                    return bot.sendMessage(chatId, "❌ Ya existe un cliente con esa cédula");
+                    return await bot.sendMessage(chatId, "❌ Ya existe esa cédula");
                 }
 
                 const cobrador = await Usuario.findById(sesiones[chatId].id);
@@ -269,11 +280,11 @@ async function procesarMensaje(update) {
 
                 await credito.save();
 
-                return bot.sendMessage(chatId, "✅ Cliente creado correctamente");
+                return await bot.sendMessage(chatId, "✅ Cliente creado");
 
             } catch (error) {
                 console.error(error);
-                return bot.sendMessage(chatId, "Error creando cliente");
+                return await bot.sendMessage(chatId, "Error creando cliente");
             }
         }
 
@@ -283,13 +294,13 @@ async function procesarMensaje(update) {
         if (text.startsWith("/eliminar")) {
 
             if (!sesiones[chatId]) {
-                return bot.sendMessage(chatId, "Primero debes hacer /login");
+                return await bot.sendMessage(chatId, "Primero debes hacer /login");
             }
 
             const partes = text.split(" ");
 
             if (partes.length < 2) {
-                return bot.sendMessage(chatId, "Uso: /eliminar cedula");
+                return await bot.sendMessage(chatId, "Uso: /eliminar cedula");
             }
 
             const cedula = partes[1];
@@ -302,7 +313,7 @@ async function procesarMensaje(update) {
                 });
 
                 if (!cliente) {
-                    return bot.sendMessage(chatId, "Cliente no encontrado");
+                    return await bot.sendMessage(chatId, "Cliente no encontrado");
                 }
 
                 const credito = await Credito.findOne({
@@ -310,19 +321,17 @@ async function procesarMensaje(update) {
                 });
 
                 if (!credito) {
-                    return bot.sendMessage(chatId, "Crédito no encontrado");
+                    return await bot.sendMessage(chatId, "Crédito no encontrado");
                 }
 
                 credito.saldo = 0;
                 await credito.save();
 
-                return bot.sendMessage(chatId,
-                    "✅ Pago registrado\nCliente al día"
-                );
+                return await bot.sendMessage(chatId, "✅ Cliente ahora está al día");
 
             } catch (error) {
                 console.error(error);
-                return bot.sendMessage(chatId, "Error eliminando deuda");
+                return await bot.sendMessage(chatId, "Error eliminando deuda");
             }
         }
 
