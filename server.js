@@ -5,6 +5,12 @@ const cors = require("cors")
 const dns = require("dns")
 const { initBot } = require("./chatbot");
 
+// importar los modelos
+const Usuario = require("./models/Usuario");
+const Cliente = require("./models/Cliente");
+const Credito = require("./models/Credito");
+const Oficina = require("./models/Oficina");
+
 const PORT = process.env.PORT || 3000;
 
 const app = express()
@@ -18,81 +24,6 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB conectado"))
   .catch(err => console.error("Error Mongo:", err))
 
-
-// =============================
-// MODELOS
-// =============================
-
-const Usuario = mongoose.model("Usuario", {
-
-  nombre: String,
-
-  usuario: { type: String, unique: true },
-
-  password: String,
-
-  rol: {
-    type: String,
-    enum: ["superadmin", "admin", "cobrador"]
-  },
-
-  activo: { type: Boolean, default: true },
-
-  oficina: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Oficina"
-  }
-
-})
-
-const Cliente = mongoose.model("Cliente", {
-
-  primerNombre: String,
-
-  segundoNombre: String,
-
-  cedula: String,
-
-  telefono: String,
-
-  cobrador: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Usuario"
-  },
-
-  oficina: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Oficina"
-  }
-
-})
-
-const Credito = mongoose.model("Credito", {
-
-  cliente: { type: mongoose.Schema.Types.ObjectId, ref: "Cliente" },
-  monto: Number,
-  saldo: Number,
-  fecha: Date
-
-})
-
-const Oficina = mongoose.model("Oficina", {
-
-  nombre: String,
-  direccion: String,
-  telefono: String,
-
-  superAdmin: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Usuario"
-  },
-
-  fechaCreacion: {
-    type: Date,
-    default: Date.now
-  }
-
-})
 
 
 // ENDPOINTS

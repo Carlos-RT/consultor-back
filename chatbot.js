@@ -1,17 +1,35 @@
 const TelegramBot = require("node-telegram-bot-api");
 const mongoose = require("mongoose");
+require("dotenv").config();
+
+// 🔥 IMPORTAR MODELOS
+const Usuario = require("./models/Usuario");
+const Cliente = require("./models/Cliente");
+const Credito = require("./models/Credito");
+const Oficina = require("./models/Oficina");
 
 const TOKEN = process.env.TELEGRAM_TOKEN;
-
 const bot = new TelegramBot(TOKEN, { polling: false });
-
-// 🔗 usar modelos ya definidos en server.js
-const Usuario = mongoose.model("Usuario");
-const Cliente = mongoose.model("Cliente");
-const Credito = mongoose.model("Credito");
 
 // 🧠 sesiones en memoria
 const sesiones = {};
+
+// =============================
+// 🔥 CONEXIÓN SEGURA A MONGO (VERCEL)
+// =============================
+async function conectarDB() {
+    if (mongoose.connection.readyState === 1) {
+        return;
+    }
+
+    try {
+        await mongoose.connect(process.env.MONGO_URI);
+        console.log("✅ Mongo conectado desde chatbot");
+    } catch (error) {
+        console.error("❌ Error conectando a Mongo:", error);
+        throw error;
+    }
+}
 
 // =============================
 // INICIALIZAR BOT
@@ -20,9 +38,10 @@ function initBot(app) {
 
     app.post("/telegram-webhook", (req, res) => {
 
-        // 🔥 RESPUESTA INMEDIATA (EVITA TIMEOUT)
+        // 🔥 RESPUESTA INMEDIATA (EVITA TIMEOUT 504)
         res.sendStatus(200);
 
+        // procesar async
         procesarMensaje(req.body);
 
     });
@@ -35,6 +54,9 @@ function initBot(app) {
 async function procesarMensaje(update) {
 
     try {
+
+        // 🔥 CONECTAR A MONGO EN CADA REQUEST
+        await conectarDB();
 
         if (!update.message) return;
 
@@ -91,10 +113,10 @@ async function procesarMensaje(update) {
                 return bot.sendMessage(chatId,
                     `✅ Bienvenido ${cobrador.nombre}\n\n` +
                     "📌 Comandos disponibles:\n\n" +
-                    "/clientes → ver todos\n" +
-                    "/buscar cedula → ver cliente\n" +
+                    "/clientes\n" +
+                    "/buscar cedula\n" +
                     "/crear n1 n2 cedula tel monto\n" +
-                    "/eliminar cedula → marcar como pagado"
+                    "/eliminar cedula"
                 );
 
             } catch (error) {
@@ -253,7 +275,7 @@ async function procesarMensaje(update) {
         }
 
         // ======================
-        // ELIMINAR DEUDA (PAGO COMPLETO)
+        // ELIMINAR DEUDA
         // ======================
         if (text.startsWith("/eliminar")) {
 
@@ -292,7 +314,7 @@ async function procesarMensaje(update) {
                 await credito.save();
 
                 return bot.sendMessage(chatId,
-                    "✅ Pago registrado correctamente\nEl cliente ahora está al día"
+                    "✅ Pago registrado\nCliente al día"
                 );
 
             } catch (error) {
@@ -302,7 +324,7 @@ async function procesarMensaje(update) {
         }
 
     } catch (error) {
-        console.error("ERROR BOT:", error);
+        console.error("❌ ERROR BOT:", error);
     }
 }
 
