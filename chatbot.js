@@ -10,6 +10,7 @@ const Oficina = require("./models/Oficina");
 
 const TOKEN = process.env.TELEGRAM_TOKEN;
 const bot = new TelegramBot(TOKEN, { polling: false });
+bot.setWebHook("https://consultor-back.vercel.app/telegram-webhook");
 
 // 🧠 sesiones en memoria
 const sesiones = {};
