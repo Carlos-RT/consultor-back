@@ -2,6 +2,7 @@ const TelegramBot = require("node-telegram-bot-api");
 
 const TOKEN = process.env.TELEGRAM_TOKEN;
 const API_URL = process.env.BASE_URL;
+const axios = require("axios");
 
 const bot = new TelegramBot(TOKEN, { polling: false });
 
@@ -51,17 +52,16 @@ function initBot(app) {
 
                     try {
 
-                        const resLogin = await fetch(`${API_URL}/login`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ usuario, password })
+                        const resLogin = await axios.post(`${API_URL}/login`, {
+                            usuario,
+                            password
                         });
 
-                        if (!resLogin.ok) {
+                        if (!resLogin.data) {
                             return bot.sendMessage(chatId, "❌ Credenciales inválidas");
                         }
 
-                        const data = await resLogin.json();
+                        const data = resLogin.data;
 
                         // guardar sesión
                         sesiones[chatId] = {
