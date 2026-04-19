@@ -16,11 +16,16 @@ const Credito = mongoose.model("Credito");
 const TOKEN = process.env.TELEGRAM_TOKEN;
 const bot = new TelegramBot(TOKEN, { polling: false });
 
-// ⚠️ CONFIGURAR WEBHOOK
+// ⚠️ CONFIGURAR WEBHOOK (solo una vez)
 bot.setWebHook("https://consultor-back.vercel.app/telegram-webhook");
 
 // 🧠 sesiones en memoria
 const sesiones = {};
+
+// =============================
+// 🔥 CONFIG MONGOOSE (MEJORA PERFORMANCE)
+// =============================
+mongoose.set("strictQuery", false);
 
 // =============================
 // 🔥 CONEXIÓN SEGURA A MONGO
@@ -29,7 +34,9 @@ async function conectarDB() {
     if (mongoose.connection.readyState === 1) return;
 
     try {
-        await mongoose.connect(process.env.MONGO_URI);
+        await mongoose.connect(process.env.MONGO_URI, {
+            bufferCommands: false
+        });
         console.log("✅ Mongo conectado desde chatbot");
     } catch (error) {
         console.error("❌ Error conectando a Mongo:", error);
@@ -38,17 +45,19 @@ async function conectarDB() {
 }
 
 // =============================
-// INICIALIZAR BOT
+// INICIALIZAR BOT (FIX PRINCIPAL)
 // =============================
 function initBot(app) {
 
-    app.post("/telegram-webhook", (req, res) => {
+    app.post("/telegram-webhook", async (req, res) => {
 
-        // 🔥 RESPUESTA INMEDIATA (evita timeout)
-        res.sendStatus(200);
-
-        // procesar async
-        procesarMensaje(req.body);
+        try {
+            await procesarMensaje(req.body); // 🔥 ESPERAR PROCESO
+            res.sendStatus(200);
+        } catch (error) {
+            console.error("❌ Error webhook:", error);
+            res.sendStatus(200); // Telegram siempre espera 200
+        }
 
     });
 
@@ -61,7 +70,7 @@ async function procesarMensaje(update) {
 
     try {
 
-        await conectarDB();
+        await conectarDB(); // 🔥 SOLO UNA VEZ
 
         if (!update.message || !update.message.text) return;
 
@@ -74,19 +83,10 @@ async function procesarMensaje(update) {
         // START
         // ======================
         if (text === "/start") {
-
-            console.log("➡️ Enviando bienvenida");
-
-            try {
-                await bot.sendMessage(chatId,
-                    "🤖 Bienvenido al bot de cobradores\n\n" +
-                    "Usa:\n/login usuario password"
-                );
-            } catch (err) {
-                console.error("❌ Error enviando mensaje:", err);
-            }
-
-            return;
+            return await bot.sendMessage(chatId,
+                "🤖 Bienvenido al bot de cobradores\n\n" +
+                "Usa:\n/login usuario password"
+            );
         }
 
         // ======================
@@ -103,40 +103,33 @@ async function procesarMensaje(update) {
             const usuario = partes[1];
             const password = partes[2];
 
-            try {
+            const cobrador = await Usuario.findOne({
+                usuario,
+                password,
+                rol: "cobrador"
+            });
 
-                const cobrador = await Usuario.findOne({
-                    usuario,
-                    password,
-                    rol: "cobrador"
-                });
-
-                if (!cobrador) {
-                    return await bot.sendMessage(chatId, "❌ Credenciales inválidas");
-                }
-
-                if (!cobrador.activo) {
-                    return await bot.sendMessage(chatId, "⛔ Cuenta deshabilitada");
-                }
-
-                sesiones[chatId] = {
-                    id: cobrador._id,
-                    nombre: cobrador.nombre
-                };
-
-                return await bot.sendMessage(chatId,
-                    `✅ Bienvenido ${cobrador.nombre}\n\n` +
-                    "📌 Comandos:\n" +
-                    "/clientes\n" +
-                    "/buscar cedula\n" +
-                    "/crear n1 n2 cedula tel monto\n" +
-                    "/eliminar cedula"
-                );
-
-            } catch (error) {
-                console.error(error);
-                return await bot.sendMessage(chatId, "Error en login");
+            if (!cobrador) {
+                return await bot.sendMessage(chatId, "❌ Credenciales inválidas");
             }
+
+            if (!cobrador.activo) {
+                return await bot.sendMessage(chatId, "⛔ Cuenta deshabilitada");
+            }
+
+            sesiones[chatId] = {
+                id: cobrador._id,
+                nombre: cobrador.nombre
+            };
+
+            return await bot.sendMessage(chatId,
+                `✅ Bienvenido ${cobrador.nombre}\n\n` +
+                "📌 Comandos:\n" +
+                "/clientes\n" +
+                "/buscar cedula\n" +
+                "/crear n1 n2 cedula tel monto\n" +
+                "/eliminar cedula"
+            );
         }
 
         // ======================
@@ -148,38 +141,31 @@ async function procesarMensaje(update) {
                 return await bot.sendMessage(chatId, "Primero debes hacer /login");
             }
 
-            try {
+            const clientes = await Cliente.find({
+                cobrador: sesiones[chatId].id
+            });
 
-                const clientes = await Cliente.find({
-                    cobrador: sesiones[chatId].id
+            if (clientes.length === 0) {
+                return await bot.sendMessage(chatId, "No tienes clientes");
+            }
+
+            let mensaje = "📋 Tus clientes:\n\n";
+
+            for (let cliente of clientes) {
+
+                const credito = await Credito.findOne({
+                    cliente: cliente._id
                 });
 
-                if (clientes.length === 0) {
-                    return await bot.sendMessage(chatId, "No tienes clientes");
-                }
+                const deuda = credito ? credito.saldo : 0;
+                const estado = deuda > 0 ? "Pendiente" : "Pagado";
 
-                let mensaje = "📋 Tus clientes:\n\n";
-
-                for (let cliente of clientes) {
-
-                    const credito = await Credito.findOne({
-                        cliente: cliente._id
-                    });
-
-                    const deuda = credito ? credito.saldo : 0;
-                    const estado = deuda > 0 ? "Pendiente" : "Pagado";
-
-                    mensaje += `👤 ${cliente.primerNombre} ${cliente.segundoNombre}\n`;
-                    mensaje += `🆔 ${cliente.cedula}\n`;
-                    mensaje += `💰 ${deuda} (${estado})\n\n`;
-                }
-
-                return await bot.sendMessage(chatId, mensaje);
-
-            } catch (error) {
-                console.error(error);
-                return await bot.sendMessage(chatId, "Error obteniendo clientes");
+                mensaje += `👤 ${cliente.primerNombre} ${cliente.segundoNombre}\n`;
+                mensaje += `🆔 ${cliente.cedula}\n`;
+                mensaje += `💰 ${deuda} (${estado})\n\n`;
             }
+
+            return await bot.sendMessage(chatId, mensaje);
         }
 
         // ======================
@@ -199,36 +185,29 @@ async function procesarMensaje(update) {
 
             const cedula = partes[1];
 
-            try {
+            const cliente = await Cliente.findOne({
+                cedula,
+                cobrador: sesiones[chatId].id
+            });
 
-                const cliente = await Cliente.findOne({
-                    cedula,
-                    cobrador: sesiones[chatId].id
-                });
-
-                if (!cliente) {
-                    return await bot.sendMessage(chatId, "Cliente no encontrado");
-                }
-
-                const credito = await Credito.findOne({
-                    cliente: cliente._id
-                });
-
-                const deuda = credito ? credito.saldo : 0;
-                const estado = deuda > 0 ? "Pendiente" : "Pagado";
-
-                return await bot.sendMessage(chatId,
-                    `👤 ${cliente.primerNombre} ${cliente.segundoNombre}\n` +
-                    `🆔 ${cliente.cedula}\n` +
-                    `📞 ${cliente.telefono}\n` +
-                    `💰 Deuda: ${deuda}\n` +
-                    `📊 Estado: ${estado}`
-                );
-
-            } catch (error) {
-                console.error(error);
-                return await bot.sendMessage(chatId, "Error buscando cliente");
+            if (!cliente) {
+                return await bot.sendMessage(chatId, "Cliente no encontrado");
             }
+
+            const credito = await Credito.findOne({
+                cliente: cliente._id
+            });
+
+            const deuda = credito ? credito.saldo : 0;
+            const estado = deuda > 0 ? "Pendiente" : "Pagado";
+
+            return await bot.sendMessage(chatId,
+                `👤 ${cliente.primerNombre} ${cliente.segundoNombre}\n` +
+                `🆔 ${cliente.cedula}\n` +
+                `📞 ${cliente.telefono}\n` +
+                `💰 Deuda: ${deuda}\n` +
+                `📊 Estado: ${estado}`
+            );
         }
 
         // ======================
@@ -250,42 +229,35 @@ async function procesarMensaje(update) {
 
             const [_, p1, p2, cedula, telefono, monto] = partes;
 
-            try {
+            const existe = await Cliente.findOne({ cedula });
 
-                const existe = await Cliente.findOne({ cedula });
-
-                if (existe) {
-                    return await bot.sendMessage(chatId, "❌ Ya existe esa cédula");
-                }
-
-                const cobrador = await Usuario.findById(sesiones[chatId].id);
-
-                const cliente = new Cliente({
-                    primerNombre: p1,
-                    segundoNombre: p2,
-                    cedula,
-                    telefono,
-                    cobrador: cobrador._id,
-                    oficina: cobrador.oficina
-                });
-
-                await cliente.save();
-
-                const credito = new Credito({
-                    cliente: cliente._id,
-                    monto: Number(monto),
-                    saldo: Number(monto),
-                    fecha: new Date()
-                });
-
-                await credito.save();
-
-                return await bot.sendMessage(chatId, "✅ Cliente creado");
-
-            } catch (error) {
-                console.error(error);
-                return await bot.sendMessage(chatId, "Error creando cliente");
+            if (existe) {
+                return await bot.sendMessage(chatId, "❌ Ya existe esa cédula");
             }
+
+            const cobrador = await Usuario.findById(sesiones[chatId].id);
+
+            const cliente = new Cliente({
+                primerNombre: p1,
+                segundoNombre: p2,
+                cedula,
+                telefono,
+                cobrador: cobrador._id,
+                oficina: cobrador.oficina
+            });
+
+            await cliente.save();
+
+            const credito = new Credito({
+                cliente: cliente._id,
+                monto: Number(monto),
+                saldo: Number(monto),
+                fecha: new Date()
+            });
+
+            await credito.save();
+
+            return await bot.sendMessage(chatId, "✅ Cliente creado");
         }
 
         // ======================
@@ -305,34 +277,27 @@ async function procesarMensaje(update) {
 
             const cedula = partes[1];
 
-            try {
+            const cliente = await Cliente.findOne({
+                cedula,
+                cobrador: sesiones[chatId].id
+            });
 
-                const cliente = await Cliente.findOne({
-                    cedula,
-                    cobrador: sesiones[chatId].id
-                });
-
-                if (!cliente) {
-                    return await bot.sendMessage(chatId, "Cliente no encontrado");
-                }
-
-                const credito = await Credito.findOne({
-                    cliente: cliente._id
-                });
-
-                if (!credito) {
-                    return await bot.sendMessage(chatId, "Crédito no encontrado");
-                }
-
-                credito.saldo = 0;
-                await credito.save();
-
-                return await bot.sendMessage(chatId, "✅ Cliente ahora está al día");
-
-            } catch (error) {
-                console.error(error);
-                return await bot.sendMessage(chatId, "Error eliminando deuda");
+            if (!cliente) {
+                return await bot.sendMessage(chatId, "Cliente no encontrado");
             }
+
+            const credito = await Credito.findOne({
+                cliente: cliente._id
+            });
+
+            if (!credito) {
+                return await bot.sendMessage(chatId, "Crédito no encontrado");
+            }
+
+            credito.saldo = 0;
+            await credito.save();
+
+            return await bot.sendMessage(chatId, "✅ Cliente ahora está al día");
         }
 
     } catch (error) {
