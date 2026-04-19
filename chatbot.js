@@ -13,7 +13,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 
 // 🧠 sesiones en memoria
 const sesiones = {};
-
+let isConnected = false;
 // =============================
 // 🔥 CONEXIÓN SEGURA A MONGO (VERCEL)
 // =============================
@@ -52,6 +52,8 @@ function initBot(app) {
 // LÓGICA PRINCIPAL
 // =============================
 async function procesarMensaje(update) {
+
+    await conectarDB();
 
     try {
 

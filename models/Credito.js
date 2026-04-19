@@ -7,4 +7,4 @@ const CreditoSchema = new mongoose.Schema({
   fecha: Date
 });
 
-module.exports = mongoose.model("Credito", CreditoSchema);
+module.exports = mongoose.models.Credito || mongoose.model("Credito", CreditoSchema);

@@ -16,4 +16,4 @@ const OficinaSchema = new mongoose.Schema({
   }
 });
 
-module.exports = mongoose.model("Oficina", OficinaSchema);
+module.exports = mongoose.models.Oficina || mongoose.model("Oficina", OficinaSchema);

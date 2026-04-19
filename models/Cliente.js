@@ -2,11 +2,8 @@ const mongoose = require("mongoose");
 
 const ClienteSchema = new mongoose.Schema({
   primerNombre: String,
-
   segundoNombre: String,
-
   cedula: String,
-
   telefono: String,
 
   cobrador: {
@@ -20,4 +17,4 @@ const ClienteSchema = new mongoose.Schema({
   }
 });
 
-module.exports = mongoose.model("Cliente", ClienteSchema);
+module.exports = mongoose.models.Cliente || mongoose.model("Cliente", ClienteSchema);
